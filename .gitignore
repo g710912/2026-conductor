@@ -1,0 +1,4 @@
+# 只公開網頁需要的檔案；分析程式和歌詞原稿留在本機
+analysis/
+*.txt
+.playwright-mcp/

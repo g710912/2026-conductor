@@ -1,0 +1,1050 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#E7ECE6">
+<title>指揮練習</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --paper: #E7ECE6;
+    --paper-lit: #F2F5F0;
+    --paper-shade: #D6DFD8;
+    --ink: #17212B;
+    --ink-mid: #4A5661;
+    --ink-pale: #86929A;
+    --cinnabar: #C8341F;   /* 右手、拍點 */
+    --azurite: #1B6B8C;    /* 左手、進歌提示 */
+    --kai: "DFKai-SB", "BiauKai", "Kaiti TC", "KaiTi", serif;
+    --ui: "Microsoft JhengHei UI", "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+    --num: "Bahnschrift", "DIN Alternate", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--ui);
+    font-size: 15px;
+    overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--azurite); outline-offset: 2px;
+  }
+
+  .app { height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; }
+
+  /* ── 頂列 ── */
+  .top {
+    display: flex; align-items: baseline; gap: 28px;
+    padding: 10px 24px 8px;
+    border-bottom: 1px solid var(--paper-shade);
+  }
+  .top h1 { margin: 0; font: 400 22px/1 var(--kai); letter-spacing: .12em; color: var(--ink-mid); }
+  .songs { display: flex; gap: 6px; }
+  .songs button {
+    background: none; border: 0; padding: 4px 14px 6px;
+    font: 400 30px/1 var(--kai); color: var(--ink-pale);
+    border-bottom: 4px solid transparent;
+  }
+  .songs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--cinnabar); }
+  .top .spacer { flex: 1; }
+  .seg { display: inline-flex; border: 1.5px solid var(--ink); border-radius: 999px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 5px 14px; font-size: 14px; }
+  .seg button + button { border-left: 1.5px solid var(--ink); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper-lit); }
+
+  /* ── 舞台 ── */
+  .stage {
+    position: relative; min-height: 0;
+    background: radial-gradient(ellipse at 50% 38%, var(--paper-lit) 0%, var(--paper) 58%, var(--paper-shade) 100%);
+  }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .count {
+    position: absolute; left: 4.5vw; top: 50%; transform: translateY(-56%);
+    text-align: center; pointer-events: none;
+  }
+  .count .n { display: block; font: 700 clamp(96px, 30vh, 280px)/.82 var(--num); color: var(--ink); }
+  .count .n.hit { color: var(--cinnabar); }
+  .count .bar { display: block; margin-top: 14px; font: 400 clamp(18px, 3vh, 26px)/1.2 var(--kai); color: var(--ink-mid); }
+  .count .tempo { display: block; margin-top: 4px; font: 400 15px/1.2 var(--num); color: var(--ink-pale); }
+
+  .cue {
+    position: absolute; right: 3.5vw; top: 50%; transform: translateY(-56%);
+    width: min(28vw, 420px); text-align: center; pointer-events: none;
+  }
+  .cue .where { font: 400 clamp(18px, 3vh, 26px)/1.2 var(--kai); color: var(--ink-mid); min-height: 1.2em; }
+  .cue .big { font: 400 clamp(48px, min(14vh, 8.6vw), 140px)/1.05 var(--kai); margin: 6px 0; min-height: 1.05em; white-space: nowrap; }
+  .cue .hint { font: 400 clamp(16px, 2.6vh, 22px)/1.35 var(--ui); color: var(--ink-mid); min-height: 2.7em; }
+  .cue[data-kind="prep"] .big { color: var(--azurite); }
+  .cue[data-kind="sing"] .big, .cue[data-kind="cut"] .big { color: var(--cinnabar); }
+  .cue[data-kind="quiet"] .big { color: var(--ink-pale); font-size: clamp(30px, 6vh, 56px); }
+
+  .mirror-note {
+    position: absolute; left: 50%; top: 8px; transform: translateX(-50%);
+    font-size: 13px; color: var(--ink-mid); white-space: nowrap; pointer-events: none;
+  }
+  .mirror-note .short { display: none; }
+  .problem {
+    position: absolute; inset: 0; display: none; place-items: center; text-align: center;
+    background: color-mix(in srgb, var(--paper) 92%, transparent); padding: 24px; z-index: 5;
+    font: 400 22px/1.6 var(--kai);
+  }
+  .problem.show { display: grid; }
+
+  /* ── 譜帶 ── */
+  .lane { height: 126px; border-top: 1px solid var(--paper-shade); background: var(--paper-lit); position: relative; }
+  .lane canvas { width: 100%; height: 100%; display: block; }
+
+  /* ── 底部控制 ── */
+  .transport { padding: 8px 24px 12px; border-top: 1px solid var(--paper-shade); background: var(--paper); }
+  .overview { position: relative; height: 34px; cursor: pointer; margin-bottom: 8px; }
+  .overview .track { position: absolute; left: 0; right: 0; top: 12px; height: 10px; background: var(--paper-shade); border-radius: 5px; }
+  .overview .sung { position: absolute; top: 12px; height: 10px; background: var(--ink); border-radius: 2px; min-width: 2px; }
+  .overview .gap { position: absolute; top: 22px; font: 400 12px/1.2 var(--kai); color: var(--ink-mid); transform: translateX(-50%); white-space: nowrap; }
+  .overview .entry { position: absolute; top: 2px; width: 3px; height: 30px; margin-left: -1.5px; background: var(--azurite); border-radius: 2px; }
+  .overview .loop { position: absolute; top: 6px; height: 22px; background: color-mix(in srgb, var(--azurite) 22%, transparent); border-radius: 4px; display: none; }
+  .overview .head { position: absolute; top: 0; width: 2px; height: 34px; margin-left: -1px; background: var(--cinnabar); }
+  .overview .head::before { content: ""; position: absolute; left: -5px; top: -1px; border: 6px solid transparent; border-top-color: var(--cinnabar); }
+
+  .row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .play {
+    width: 96px; height: 40px; border-radius: 999px; border: 0;
+    background: var(--ink); color: var(--paper-lit); font: 400 20px/1 var(--kai); letter-spacing: .1em;
+  }
+  .time { font: 500 17px/1 var(--num); min-width: 104px; font-variant-numeric: tabular-nums; }
+  .label { font-size: 13px; color: var(--ink-mid); margin-right: -8px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .chip {
+    border: 1.5px solid var(--azurite); color: var(--azurite); background: none;
+    border-radius: 999px; padding: 4px 11px; font: 500 14px/1.2 var(--num);
+  }
+  .chip[aria-pressed="true"] { background: var(--azurite); color: var(--paper-lit); }
+  .toggle {
+    border: 1.5px solid var(--ink); background: none; border-radius: 999px; padding: 5px 14px; font-size: 14px;
+  }
+  .toggle[aria-pressed="true"] { background: var(--ink); color: var(--paper-lit); }
+  .row .spacer { flex: 1; }
+
+  details.tune { position: relative; }
+  details.tune summary { list-style: none; border: 1.5px solid var(--ink-pale); color: var(--ink-mid); border-radius: 999px; padding: 5px 14px; font-size: 14px; cursor: pointer; }
+  details.tune summary::-webkit-details-marker { display: none; }
+  details.tune[open] summary { background: var(--paper-shade); }
+  .panel {
+    position: absolute; right: 0; bottom: calc(100% + 10px); width: 380px; z-index: 6;
+    background: var(--paper-lit); border: 1.5px solid var(--ink); border-radius: 10px; padding: 16px 18px;
+    box-shadow: 0 10px 30px rgba(23, 33, 43, .18);
+  }
+  .panel h2 { margin: 0 0 4px; font: 400 19px/1.3 var(--kai); }
+  .panel p { margin: 0 0 8px; font-size: 13px; line-height: 1.55; color: var(--ink-mid); }
+  .panel .block + .block { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--paper-shade); }
+  .panel input[type="range"] { width: 100%; accent-color: var(--cinnabar); }
+  .panel .btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .panel .btns button { border: 1.5px solid var(--ink); background: none; border-radius: 8px; padding: 5px 10px; font-size: 14px; }
+  .panel .btns button:disabled { opacity: .35; cursor: default; }
+  .panel output { font: 500 14px/1 var(--num); color: var(--ink); }
+  .panel .close { display: none; }
+  .keys { font-size: 12.5px; color: var(--ink-pale); }
+
+  @media (max-width: 900px) {
+    .count { left: 12px; top: 10px; transform: none; text-align: left; }
+    .count .n { font-size: 84px; }
+    .cue { right: 12px; top: 10px; transform: none; width: 46vw; text-align: right; }
+    .cue .big { font-size: 44px; }
+    .top h1 { display: none; }
+  }
+
+  /* ── 手機：直向的窄螢幕，或橫向的矮螢幕。第一屏給人物，放不下的控制鈕往下捲 ── */
+  @media (max-width: 700px), (max-height: 520px) {
+    html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+    html, body { height: auto; }
+    body { overflow-x: hidden; overflow-y: auto; -webkit-tap-highlight-color: transparent; }
+    .app { display: flex; flex-direction: column; height: auto; min-height: 100vh; min-height: 100dvh; }
+
+    .top { align-items: center; gap: 10px; padding: 5px 12px 4px; }
+    .top h1 { display: none; }
+    .songs { gap: 2px; }
+    .songs button { padding: 4px 7px 5px; font-size: 22px; border-bottom-width: 3px; white-space: nowrap; }
+    .top .seg { flex: none; }
+    .top .seg button { padding: 7px 7px; font-size: 12px; white-space: nowrap; }
+
+    .stage { flex: 1 0 300px; }
+    .count { left: 12px; top: 26px; transform: none; text-align: left; }
+    .count .n { font-size: 72px; }
+    .count .bar { margin-top: 6px; font-size: 16px; }
+    .count .tempo { display: none; }
+    .cue { right: 12px; top: 26px; transform: none; width: 36vw; text-align: right; }
+    .cue .where { font-size: 15px; }
+    .cue .big { font-size: 40px; margin: 2px 0; }
+    .cue .hint { font-size: 13px; min-height: 0; text-wrap: balance; }
+    .cue[data-kind="quiet"] .big { font-size: 26px; }
+    .mirror-note { top: 5px; font-size: 12px; }
+    .mirror-note .long { display: none; }
+    .mirror-note .short { display: inline; }
+
+    .transport { padding: 6px 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
+    .overview { margin-bottom: 6px; }
+    .row { gap: 8px 10px; }
+    .play { order: 1; width: 80px; }
+    .time { order: 2; min-width: 0; font-size: 15px; }
+    .row .spacer { order: 5; }
+    #click { order: 6; }
+    details.tune { order: 7; }
+    .row::after { content: ""; order: 8; flex-basis: 100%; height: 0; margin-top: -8px; }   /* 強制換行 */
+    .label.for-rates { order: 9; margin-right: -2px; }
+    #rates { order: 10; }
+    .label.for-chips { order: 11; flex-basis: 100%; margin: 2px 0 -4px; }
+    .chips { order: 12; flex-basis: 100%; }
+    .seg button, .toggle, details.tune summary { padding: 8px 13px; }
+    .chip { padding: 7px 9px; font-size: 13px; }
+
+    .panel {
+      position: fixed; left: 8px; right: 8px; bottom: 8px; width: auto;   /* 只蓋住下半部，調整時看得到手 */
+      max-height: 46vh; overflow-y: auto; padding-top: 0;
+    }
+    .panel .close {
+      display: block; position: sticky; top: 8px; z-index: 1; margin: 8px 0 -6px auto;
+      border: 1.5px solid var(--ink); background: var(--paper-lit); border-radius: 999px; padding: 6px 16px; font-size: 14px;
+    }
+    .keys { display: none; }
+  }
+  @media (max-height: 520px) {   /* 橫向：第一屏只留歌名、人物和播放那一排，譜帶收起來，進度條排到下面 */
+    .lane { display: none; }
+    .top { padding: 3px 12px 2px; }
+    .songs button { padding: 2px 7px 3px; font-size: 20px; }
+    .top .seg button { padding: 5px 8px; }
+    .stage { flex-basis: calc(100vh - 94px); flex-basis: calc(100dvh - 94px); }
+    .transport { display: flex; flex-direction: column; }
+    .overview { order: 2; margin: 8px 0 0; }
+    .panel { top: 8px; right: auto; width: 300px; max-height: none; }   /* 靠左直放，不擋打拍子的手 */
+    .label.for-rates { order: 3; }
+    #rates { order: 4; }
+    .label.for-chips { flex-basis: auto; margin: 0 -2px 0 0; }
+    .chips { flex: 1 1 0; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>指揮練習</h1>
+    <nav class="songs" id="songs" role="tablist" aria-label="選擇歌曲"></nav>
+    <span class="spacer"></span>
+    <div class="seg" role="group" aria-label="觀看方向">
+      <button id="viewMirror" aria-pressed="true">照鏡子跟著做</button>
+      <button id="viewChoir" aria-pressed="false">團員看到的樣子</button>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+    <canvas id="figure"></canvas>
+    <div class="count">
+      <span class="n" id="beatNum">&nbsp;</span>
+      <span class="bar" id="barNum">&nbsp;</span>
+      <span class="tempo" id="tempo"></span>
+    </div>
+    <div class="cue" id="cue" data-kind="quiet">
+      <div class="where" id="cueWhere"></div>
+      <div class="big" id="cueBig"></div>
+      <div class="hint" id="cueHint"></div>
+    </div>
+    <div class="mirror-note" id="mirrorNote"><span class="long"></span><span class="short"></span></div>
+    <div class="problem" id="problem"></div>
+  </main>
+
+  <section class="lane" aria-label="接下來的拍子與演唱段落"><canvas id="lane"></canvas></section>
+
+  <footer class="transport">
+    <div class="overview" id="overview" title="點一下跳到該位置"></div>
+    <div class="row">
+      <button class="play" id="play">播放</button>
+      <span class="time" id="time">0:00 / 0:00</span>
+      <span class="label for-rates">速度</span>
+      <div class="seg" id="rates" role="group" aria-label="播放速度"></div>
+      <span class="label for-chips">練進歌點</span>
+      <div class="chips" id="chips"></div>
+      <span class="spacer"></span>
+      <button class="toggle" id="click" aria-pressed="false">節拍聲</button>
+      <details class="tune" id="tune">
+        <summary>校正</summary>
+        <div class="panel">
+          <button class="close" id="tuneClose">關閉</button>
+          <div class="block">
+            <h2>畫面和音樂對不齊</h2>
+            <p>用藍牙喇叭或耳機時聲音會慢一點。拖到手落在拍點的瞬間剛好聽到拍子為止。</p>
+            <input type="range" id="offset" min="-300" max="300" step="10" value="0">
+            <output id="offsetOut"></output>
+          </div>
+          <div class="block">
+            <h2>「1」沒有落在重拍上</h2>
+            <p>打開節拍聲，高音應該落在每小節最重的那一拍。不對的話把第一拍往前或往後移。</p>
+            <div class="btns">
+              <button id="shiftBack">提早一拍</button>
+              <button id="shiftFwd">延後一拍</button>
+              <output id="shiftOut"></output>
+            </div>
+          </div>
+          <div class="block">
+            <h2>進歌點不對或漏掉</h2>
+            <p>先暫停在該開口唱的那一拍附近，再新增或刪除。</p>
+            <div class="btns">
+              <button id="cueAdd">在這一拍加進歌點</button>
+              <button id="cueDel">刪除這個進歌點</button>
+            </div>
+          </div>
+          <div class="block">
+            <div class="btns"><button id="resetTune">全部還原成自動判定</button></div>
+            <p class="keys" style="margin-top:10px">空白鍵 播放／暫停　← → 前後一小節　↑ ↓ 上一個／下一個進歌點　M 節拍聲</p>
+          </div>
+        </div>
+      </details>
+    </div>
+  </footer>
+</div>
+<audio id="audio" preload="auto"></audio>
+
+<script src="conducting-data.js"></script>
+<script>
+(() => {
+'use strict';
+
+const SONGS = window.CONDUCTING_SONGS || [];
+const $ = id => document.getElementById(id);
+const audio = $('audio');
+const RATES = [0.6, 0.75, 0.9, 1];
+const CN = ['零', '一', '兩', '三', '四', '五', '六', '七', '八'];
+const css = getComputedStyle(document.documentElement);
+const C = {
+  paper: css.getPropertyValue('--paper').trim(),
+  paperLit: css.getPropertyValue('--paper-lit').trim(),
+  paperShade: css.getPropertyValue('--paper-shade').trim(),
+  ink: css.getPropertyValue('--ink').trim(),
+  inkMid: css.getPropertyValue('--ink-mid').trim(),
+  inkPale: css.getPropertyValue('--ink-pale').trim(),
+  cinnabar: css.getPropertyValue('--cinnabar').trim(),
+  azurite: css.getPropertyValue('--azurite').trim(),
+};
+const FONT = { kai: css.getPropertyValue('--kai').trim(), num: css.getPropertyValue('--num').trim(), ui: css.getPropertyValue('--ui').trim() };
+
+/* ───────── 設定（存在這台電腦的瀏覽器裡） ───────── */
+const LS_KEY = 'conducting-practice-v1';
+const store = (() => {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { s = {}; }
+  s.view = s.view === 'choir' ? 'choir' : 'mirror';
+  s.rate = RATES.includes(s.rate) ? s.rate : 1;
+  s.click = !!s.click;
+  s.songs = s.songs || {};
+  return s;
+})();
+const save = () => { try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) { /* 存不了就算了 */ } };
+const tuneOf = id => (store.songs[id] = Object.assign({ offsetMs: 0, shift: 0, added: [], removed: [] }, store.songs[id]));
+
+/* ───────── 小工具 ───────── */
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, s) => a + (b - a) * s;
+const smooth = s => { s = clamp(s, 0, 1); return s * s * (3 - 2 * s); };
+const mod = (a, n) => ((a % n) + n) % n;
+const fmt = t => { t = Math.max(0, t); return Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0'); };
+
+/* ───────── 歌曲模型 ───────── */
+let S = null;
+
+function buildModel(song) {
+  const tune = tuneOf(song.id);
+  const raw = song.beats;
+  const bpb = song.beatsPerBar;
+  const d0 = raw[1] - raw[0], dn = raw[raw.length - 1] - raw[raw.length - 2];
+  const pre = [], post = [];
+  for (let t = raw[0] - d0; ; t -= d0) { pre.unshift(t); if (t < -2 * d0) break; }
+  for (let t = raw[raw.length - 1] + dn; ; t += dn) { post.push(t); if (t > song.duration + 2 * dn) break; }
+  const beats = pre.concat(raw, post);
+  const gFirst = pre.length, gLast = gFirst + raw.length - 1;
+  const downG = gFirst + song.downbeat + tune.shift;
+
+  const pos = t => {
+    let lo = 0, hi = beats.length - 2;
+    if (t <= beats[0]) return (t - beats[0]) / (beats[1] - beats[0]);
+    if (t >= beats[hi + 1]) return hi + 1 + (t - beats[hi + 1]) / (beats[hi + 1] - beats[hi]);
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (beats[m] <= t) lo = m; else hi = m - 1; }
+    return lo + (t - beats[lo]) / (beats[lo + 1] - beats[lo]);
+  };
+  const timeAt = p => {
+    const i = clamp(Math.floor(p), 0, beats.length - 2);
+    return beats[i] + (p - i) * (beats[i + 1] - beats[i]);
+  };
+  const inBar = g => mod(g - downG, bpb);
+  const barNo = g => Math.floor((g - downG) / bpb) + 1;
+
+  // 演唱樂句 → 進歌點。樂句前休息 2 拍以上，就需要指揮帶進來。
+  const phrases = song.phrases.map(([a, b]) => ({ a, b, pa: pos(a), pb: pos(b) }));
+  const removed = new Set(tune.removed), cues = [];
+  phrases.forEach((ph, i) => {
+    const gap = i === 0 ? Infinity : ph.pa - phrases[i - 1].pb;
+    if (gap < 2) return;
+    const g = Math.floor(ph.pa), f = ph.pa - g;
+    const drop = f >= 0.72 ? g + 1 : g;          // 手落下的那一拍
+    const offbeat = f >= 0.28 && f < 0.72;       // 後半拍才開口
+    if (removed.has(drop - gFirst)) return;
+    cues.push({ drop, offbeat, sing: offbeat ? ph.pa : drop, major: true, auto: true });
+  });
+  tune.added.forEach(r => {
+    const drop = r + gFirst;
+    if (!cues.some(c => c.drop === drop)) cues.push({ drop, offbeat: false, sing: drop, major: true, auto: false });
+  });
+  cues.sort((a, b) => a.drop - b.drop);
+  cues.filter(c => c.major).forEach((c, i) => { c.no = i + 1; });
+
+  // 演唱區段：樂句之間休息不到兩小節就算同一段
+  const sections = [];
+  phrases.forEach(ph => {
+    const last = sections[sections.length - 1];
+    if (last && ph.pa - last.pb < 2 * bpb) last.pb = ph.pb, last.b = ph.b;
+    else sections.push({ a: ph.a, b: ph.b, pa: ph.pa, pb: ph.pb });
+  });
+  // 收音：每段唱完的地方（對齊到最近的拍子）
+  const cuts = sections.map((sec, i) => ({ rel: Math.round(sec.pb), final: i === sections.length - 1 }));
+  const finalRel = cuts.length ? cuts[cuts.length - 1].rel : null;
+
+  const leftEvents = cues.map(c => ({ kind: 'cue', at: c.drop, p0: c.drop - 2, p1: c.drop + 3, major: c.major }))
+    .concat(cuts.map(c => ({ kind: 'cut', at: c.rel, p0: c.rel - 2, p1: c.rel + 2.5, final: c.final })));
+
+  // 歌詞：每個字從哪一拍唱到哪一拍，以及每一句在畫面下方出現的時段
+  const voiceEnd = q => { const ph = phrases.find(ph => q >= ph.pa - 0.5 && q < ph.pb); return ph ? ph.pb : null; };
+  const lines = (song.lyrics || []).map(([text, times]) => {
+    const chars = [...text].map((ch, k) => ({ ch, p: pos(times[k]) }));
+    return { text, chars, p0: chars[0].p };
+  });
+  const flat = lines.flatMap(ln => ln.chars);
+  flat.forEach((c, i) => {          // 一個字唱到下一個字開口，或唱到聲音停下來為止
+    const next = flat[i + 1] ? flat[i + 1].p : Infinity, ve = voiceEnd(c.p + 0.05);
+    c.e = Math.max(c.p + 0.2, Math.min(next, ve != null ? ve : c.p + 1, c.p + 6));
+  });
+  lines.forEach((ln, i) => {        // 前一句唱完就換上這一句；前奏、間奏後最多提早兩小節出現
+    const prev = lines[i - 1];
+    ln.end = ln.chars[ln.chars.length - 1].e;
+    ln.from = Math.min(ln.p0 - 0.04, Math.max(prev ? prev.end + 0.25 : -Infinity, ln.p0 - 2 * bpb));
+  });
+  lines.forEach((ln, i) => { ln.hide = Math.min(i + 1 < lines.length ? lines[i + 1].from : Infinity, ln.end + bpb); });
+
+  const bpm = 60 / ((raw[raw.length - 1] - raw[0]) / (raw.length - 1));
+  return { song, tune, bpb, beats, gFirst, gLast, downG, pos, timeAt, inBar, barNo, phrases, cues, sections, cuts, finalRel, leftEvents, lines, bpm };
+}
+
+/* ───────── 手勢：全部是「拍子位置 p」的純函數，暫停或跳轉時畫面一樣正確 ───────── */
+// 座標：指揮自己的方向，x 向右、y 向上，單位公尺，原點在兩肩中間。
+const ZONE_R = { x: 0.27, y: -0.40 };       // 右手拍點（第 1 拍）位置，大約肚臍高、右肩前
+const UNIT = 0.42;                          // 拍型大小
+const REST_L = { x: -0.22, y: -0.47 };      // 左手平常停放的位置
+const DOWN = { x: 0.25, y: -0.46 };         // 手放下
+const AMP_IDLE = 0.68;
+
+// 各拍的拍點位置（拍型大小為 1 時）與往下一拍彈起的高度
+const PATTERNS = {
+  2: { pts: [[0, 0], [0.22, 0.24]], lift: [0.30, 0.86] },
+  3: { pts: [[0, 0], [0.50, 0.06], [0.18, 0.28]], lift: [0.30, 0.24, 0.86] },
+  4: { pts: [[0, 0], [-0.42, 0.06], [0.50, 0.06], [0.20, 0.28]], lift: [0.30, 0.28, 0.24, 0.86] },
+};
+function patternPoint(bpb, k, s) {
+  const P = PATTERNS[bpb] || PATTERNS[4];
+  const n = P.pts.length, a = P.pts[k % n], last = (k % n) === n - 1, b = last ? P.pts[0] : P.pts[k + 1];
+  const bounce = P.lift[k % n] * 4 * s * (1 - s);     // 拋物線：離開與抵達拍點時最快，像球彈跳
+  const x = last ? lerp(a[0], 0, smooth(s / 0.6)) : lerp(a[0], b[0], 0.5 * s + 0.5 * smooth(s));
+  return { x, y: lerp(a[1], b[1], s) + bounce };
+}
+
+function ampAt(p) {
+  let a = AMP_IDLE;
+  for (const sec of S.sections) {
+    const up = smooth((p - (sec.pa - 2.5)) / 1.5);
+    const down = 1 - smooth((p - sec.pb - 0.5) / 3);
+    a = Math.max(a, AMP_IDLE + (1 - AMP_IDLE) * Math.min(up, down));
+  }
+  for (const c of S.cues) {                    // 預備拍放大
+    const u = p - (c.drop - 0.5);
+    if (u > -1.5 && u < 1.5) a += 0.18 * Math.exp(-(u * u) / 0.18);
+  }
+  if (S.finalRel != null) a *= 1 - smooth((p - S.finalRel - 0.25) / 1.75);   // 最後收音後手停住
+  a *= smooth((p - (S.gFirst - 1)) / 0.35);                                  // 音樂開始前手停在拍點
+  return a;
+}
+function lowerAt(t) {                                                         // 音樂結束，手放下
+  const last = S.beats[S.gLast], d = last - S.beats[S.gLast - 1];
+  return smooth((t - (last + 1.5 * d)) / (2.5 * d));
+}
+
+function rightHand(p, t) {
+  const g = Math.floor(p), s = p - g, amp = ampAt(p);
+  const q = patternPoint(S.bpb, S.inBar(g), s);
+  const low = lowerAt(t);
+  return { x: lerp(ZONE_R.x + q.x * UNIT * amp, DOWN.x, low), y: lerp(ZONE_R.y + q.y * UNIT * amp, DOWN.y, low), amp };
+}
+
+function leftHand(p, t) {
+  let x = REST_L.x, y = REST_L.y, label = '', best = Infinity;
+  for (const ev of S.leftEvents) {
+    if (p < ev.p0 || p > ev.p1 || Math.abs(p - ev.at) >= best) continue;
+    best = Math.abs(p - ev.at);
+    const u = p - ev.at;
+    if (ev.kind === 'cue') {
+      const A = { x: -0.31, y: -0.30 }, D = { x: -0.27, y: -0.40 }, Hh = { x: -0.30, y: -0.24 };
+      const lift = 0.30;
+      if (u < -1) { const s = smooth(u + 2); x = lerp(REST_L.x, A.x, s); y = lerp(REST_L.y, A.y, s); label = '抬手'; }
+      else if (u < 0) { const s = u + 1; x = lerp(A.x, D.x, s); y = lerp(A.y, D.y, s) + lift * 4 * s * (1 - s); label = '預備'; }
+      else if (u < 1) { const s = 1 - (1 - u) * (1 - u); x = lerp(D.x, Hh.x, s); y = lerp(D.y, Hh.y, s); label = '進'; }
+      else { const s = smooth((u - 1) / 2); x = lerp(Hh.x, REST_L.x, s); y = lerp(Hh.y, REST_L.y, s); }
+    } else {
+      const Hc = { x: -0.38, y: -0.20 }, Cl = { x: -0.30, y: -0.28 }, R = 0.07;
+      if (u < -1) { const s = smooth(u + 2); x = lerp(REST_L.x, Hc.x, s); y = lerp(REST_L.y, Hc.y, s); label = '撐住'; }
+      else if (u < 0) {
+        const s = u + 1, th = 2 * Math.PI * s * s;       // 畫一個小圈，越接近收音越快
+        x = Hc.x - R * Math.sin(th) + (Cl.x - Hc.x) * s * s;
+        y = Hc.y + R * (1 - Math.cos(th)) + (Cl.y - Hc.y) * s * s; label = '撐住';
+      }
+      else if (u < 0.6) { x = Cl.x; y = Cl.y; label = '收'; }
+      else { const s = smooth((u - 0.6) / 1.9); x = lerp(Cl.x, REST_L.x, s); y = lerp(Cl.y, REST_L.y, s); }
+    }
+  }
+  const low = lowerAt(t);
+  return { x: lerp(x, -DOWN.x, low), y: lerp(y, DOWN.y, low), label };
+}
+
+/* ───────── 右側提示文字 ───────── */
+function cueState(p) {
+  const bpb = S.bpb;
+  if (p < S.gFirst - 0.5) return { kind: 'quiet', where: '', big: '就位', hint: '雙手抬到拍點高度，等音樂開始' };
+  const singing = S.sections.some(s => p >= s.pa - 0.5 && p <= s.pb);
+  for (const c of S.cues) {
+    if (!c.major) continue;
+    const left = c.drop - p;
+    if (left <= 0 && p - c.sing < 1.6 && p >= c.sing - 0.05) return { kind: 'sing', where: `第 ${c.no} 次進歌`, big: '唱', hint: '' };
+    if (left <= 0 && p < c.sing) return { kind: 'prep', where: `第 ${c.no} 次進歌`, big: '預備', hint: '手落下後半拍開口' };
+    if (left > 0 && left <= 1) return { kind: 'prep', where: `第 ${c.no} 次進歌`, big: '預備', hint: '左手跟右手一起抬高，吸氣' };
+    if (left > 1 && left <= bpb) return { kind: 'count', where: `第 ${c.no} 次進歌，還有`, big: `${CN[Math.ceil(left)] || Math.ceil(left)}拍`, hint: left <= 2 ? '左手抬起來，眼睛看團員' : '' };
+    if (left > bpb && left <= 4 * bpb && !singing) {
+      const bars = Math.ceil(left / bpb);
+      return { kind: 'count', where: `第 ${c.no} 次進歌，還有`, big: `${CN[bars] || bars}小節`, hint: '' };
+    }
+  }
+  for (const c of S.cuts) {
+    const left = c.rel - p;
+    if (left > 0 && left <= 2) return { kind: 'count', where: c.final ? '最後一個音' : '這一段結束', big: '撐住', hint: '左手抬高托住長音' };
+    if (left <= 0 && left > -1.4) return { kind: 'cut', where: c.final ? '最後一個音' : '這一段結束', big: '收', hint: '' };
+  }
+  if (p > S.gLast + 1.5) return { kind: 'quiet', where: '', big: '結束', hint: '手慢慢放下' };
+  if (S.finalRel != null && p > S.finalRel) return { kind: 'quiet', where: '', big: '尾奏', hint: '手停住不動，音樂結束再放下' };
+  if (singing) return { kind: 'quiet', where: '', big: '', hint: '' };
+  const first = S.sections[0];
+  return { kind: 'quiet', where: '', big: first && p < first.pa ? '前奏' : '間奏', hint: '小小地打拍子，心裡跟著數' };
+}
+
+/* ───────── 畫布 ───────── */
+const fig = $('figure'), lane = $('lane');
+const fctx = fig.getContext('2d'), lctx = lane.getContext('2d');
+function fit(cv) {
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  return { w: r.width, h: r.height, dpr };
+}
+
+// 手臂：三維的兩節骨頭解算（手在身體前方），再正投影到畫面
+function elbowOf(sh, hand, side) {
+  const a = 0.29, b = 0.30, reach = 0.578;
+  const dx = hand.x - sh.x, dy = hand.y - sh.y;
+  let dz = 0.25;
+  const d2 = dx * dx + dy * dy;
+  if (d2 + dz * dz > reach * reach) dz = Math.sqrt(Math.max(0.0025, reach * reach - d2));
+  const d = Math.min(Math.sqrt(d2 + dz * dz), a + b - 0.005);
+  const nx = dx / d, ny = dy / d, nz = dz / d;
+  const along = (a * a - b * b + d * d) / (2 * d);
+  const r = Math.sqrt(Math.max(0, a * a - along * along));
+  let px = 0.42 * side, py = -0.88, pz = -0.22;                // 手肘偏向外側下方
+  const dot = px * nx + py * ny + pz * nz;
+  px -= dot * nx; py -= dot * ny; pz -= dot * nz;
+  const pl = Math.hypot(px, py, pz) || 1;
+  return { x: sh.x + along * nx + r * px / pl, y: sh.y + along * ny + r * py / pl };
+}
+
+// Q 版小男孩（半身）。座標和手勢用的是同一套（原點在兩肩中間），所以手和身體的相對位置不變。
+const BOY = { skin: '#F8DCC8', shirt: '#FCFCF8', blush: 'rgba(200,52,31,0.24)' };
+function drawBoy(ctx, X, Y, ppm, mx) {
+  const L = v => v * ppm, ol = Math.max(2, 0.0065 * ppm);
+  const outline = () => { ctx.strokeStyle = C.ink; ctx.lineWidth = ol; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; };
+  const ell = (x, y, rx, ry, fill, stroke) => {
+    ctx.beginPath(); ctx.ellipse(X(x), Y(y), L(rx), L(ry), 0, 0, Math.PI * 2);
+    ctx.fillStyle = fill; ctx.fill(); if (stroke !== false) { outline(); ctx.stroke(); }
+  };
+  const poly = (pts, fill) => {
+    ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)));
+    ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); outline(); ctx.stroke();
+  };
+
+  // 短褲只露出腰部
+  poly([[-0.166, -0.39], [0.166, -0.39], [0.18, -0.64], [-0.18, -0.64]], C.ink);
+  // 襯衫
+  ctx.beginPath(); ctx.moveTo(X(-0.075), Y(0.05));
+  ctx.quadraticCurveTo(X(-0.185), Y(0.045), X(-0.19), Y(-0.06));
+  ctx.lineTo(X(-0.166), Y(-0.405)); ctx.lineTo(X(0.166), Y(-0.405)); ctx.lineTo(X(0.19), Y(-0.06));
+  ctx.quadraticCurveTo(X(0.185), Y(0.045), X(0.075), Y(0.05));
+  ctx.closePath(); ctx.fillStyle = BOY.shirt; ctx.fill(); outline(); ctx.stroke();
+  ctx.strokeStyle = 'rgba(23,33,43,0.22)'; ctx.lineWidth = ol * 0.8;
+  ctx.beginPath(); ctx.moveTo(X(0), Y(-0.07)); ctx.lineTo(X(0), Y(-0.40)); ctx.stroke();
+  ell(0, -0.17, 0.009, 0.009, C.ink, false); ell(0, -0.28, 0.009, 0.009, C.ink, false);
+
+  // 頭、耳朵
+  ell(-0.196, 0.232, 0.036, 0.043, BOY.skin); ell(0.196, 0.232, 0.036, 0.043, BOY.skin);
+  ell(0, 0.25, 0.2, 0.19, BOY.skin);
+  // 領結（畫在下巴前面）
+  poly([[0, -0.03], [-0.075, 0.008], [-0.075, -0.068]], C.cinnabar);
+  poly([[0, -0.03], [0.075, 0.008], [0.075, -0.068]], C.cinnabar);
+  ell(0, -0.03, 0.02, 0.022, C.cinnabar);
+
+  // 頭髮：頭頂一圈加上尖尖的瀏海，再翹一撮
+  const fringe = [[0.207, 0.262], [0.186, 0.30], [0.14, 0.368], [0.10, 0.306], [0.055, 0.372], [0, 0.312],
+                  [-0.06, 0.374], [-0.11, 0.316], [-0.155, 0.362], [-0.19, 0.30], [-0.207, 0.262]];
+  if (mx < 0) fringe.reverse();
+  ctx.beginPath(); ctx.ellipse(X(0), Y(0.262), L(0.207), L(0.198), 0, Math.PI, Math.PI * 2);
+  fringe.forEach(([x, y]) => ctx.lineTo(X(x), Y(y)));
+  ctx.closePath(); ctx.fillStyle = C.ink; ctx.fill(); outline(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(X(-0.035), Y(0.445));
+  ctx.quadraticCurveTo(X(0), Y(0.535), X(0.075), Y(0.488));
+  ctx.quadraticCurveTo(X(0.032), Y(0.478), X(0.04), Y(0.44));
+  ctx.closePath(); ctx.fillStyle = C.ink; ctx.fill(); outline(); ctx.stroke();
+
+  // 臉
+  for (const s of [-1, 1]) {
+    ell(0.088 * s, 0.213, 0.026, 0.037, C.ink, false);
+    ctx.beginPath(); ctx.arc(X(0.088 * s) - L(0.008), Y(0.213) - L(0.014), L(0.0105), 0, Math.PI * 2);
+    ctx.fillStyle = '#fff'; ctx.fill();
+    ell(0.137 * s, 0.158, 0.036, 0.021, BOY.blush, false);
+  }
+  outline(); ctx.lineWidth = ol * 1.2;                     // 微笑
+  ctx.beginPath(); ctx.arc(X(0), Y(0.168), L(0.036), Math.PI * 0.18, Math.PI * 0.82); ctx.stroke();
+
+  // 半身像：腰部以下淡出（只擦掉身體，之後才畫的手和拍點不受影響）
+  const fade = ctx.createLinearGradient(0, Y(-0.44), 0, Y(-0.57));
+  fade.addColorStop(0, 'rgba(0,0,0,0)'); fade.addColorStop(1, 'rgba(0,0,0,1)');
+  ctx.save(); ctx.globalCompositeOperation = 'destination-out'; ctx.fillStyle = fade;
+  ctx.fillRect(X(0) - L(0.45), Y(-0.44), L(0.9), L(0.32)); ctx.restore();
+}
+
+function drawFigure(t, p) {
+  const { w, h, dpr } = fit(fig), ctx = fctx;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const band = clamp(h * 0.2, 70, 140);                 // 下方留給歌詞的高度
+  const ppm = Math.min((h - 30 - band) / 1.07, w / 1.5);
+  if (ppm < 20) return;                                 // 視窗太矮，畫不下人物
+  const cx = w / 2, sy = 26 + 0.50 * ppm;
+  const mx = store.view === 'mirror' ? 1 : -1;
+  const X = x => cx + mx * x * ppm, Y = y => sy - y * ppm;
+
+  const rh = rightHand(p, t), lh = leftHand(p, t);
+  const g = Math.floor(p), s = p - g, k = S.inBar(g);
+  const beating = rh.amp > 0.05 && lowerAt(t) < 0.05;
+
+  // 身體：Q 版小指揮（半身）
+  drawBoy(ctx, X, Y, ppm, mx);
+
+  // 拍點線與拍型
+  const amp = Math.max(rh.amp, 0.001);
+  const u = UNIT * amp;
+  if (lowerAt(t) < 0.05) {
+    ctx.strokeStyle = 'rgba(23,33,43,0.16)'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(X(ZONE_R.x - 0.36), Y(ZONE_R.y)); ctx.lineTo(X(ZONE_R.x + 0.36), Y(ZONE_R.y)); ctx.stroke();
+  }
+  if (beating) {
+    ctx.strokeStyle = 'rgba(23,33,43,0.42)'; ctx.lineWidth = 2.2; ctx.setLineDash([3, 7]); ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let kk = 0; kk < S.bpb; kk++) for (let i = 0; i <= 24; i++) {
+      const q = patternPoint(S.bpb, kk, i / 24);
+      const px = X(ZONE_R.x + q.x * u), py = Y(ZONE_R.y + q.y * u);
+      if (kk === 0 && i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+    const P = PATTERNS[S.bpb] || PATTERNS[4];
+    const fs = Math.max(17, 0.058 * ppm);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    P.pts.forEach((pt, i) => {
+      const px = X(ZONE_R.x + pt[0] * u), py = Y(ZONE_R.y + pt[1] * u);
+      const on = i === k && s < 0.5;
+      ctx.fillStyle = on ? C.cinnabar : C.paperLit; ctx.strokeStyle = on ? C.cinnabar : C.inkMid; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(px, py + fs * 1.25, fs * 0.72, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = on ? C.paperLit : C.ink; ctx.font = `700 ${fs}px ${FONT.num}`;
+      ctx.fillText(String(i + 1), px, py + fs * 1.25 + 1);
+    });
+  }
+
+  // 手臂：白襯衫袖子
+  const ol = Math.max(2, 0.0065 * ppm);
+  const arm = (side, hand) => {
+    const sh = { x: 0.165 * side, y: -0.03 }, el = elbowOf(sh, hand, side);
+    const path = () => { ctx.beginPath(); ctx.moveTo(X(sh.x), Y(sh.y)); ctx.lineTo(X(el.x), Y(el.y)); ctx.lineTo(X(hand.x), Y(hand.y)); };
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 0.07 * ppm + 2 * ol; path(); ctx.stroke();
+    ctx.strokeStyle = BOY.shirt; ctx.lineWidth = 0.07 * ppm; path(); ctx.stroke();
+  };
+  arm(-1, lh); arm(1, rh);
+
+  // 右手的筆跡
+  const hr = 0.05 * ppm;
+  if (beating) {
+    const N = 26, span = 0.62;
+    let prev = null;
+    for (let i = N; i >= 0; i--) {
+      const pp = p - span * i / N, q = rightHand(pp, t);
+      const pt = { x: X(q.x), y: Y(q.y) };
+      if (prev) {
+        const f = 1 - i / N;
+        ctx.strokeStyle = `rgba(200,52,31,${0.55 * f * f})`; ctx.lineWidth = Math.max(1, hr * 1.7 * f); ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(pt.x, pt.y); ctx.stroke();
+      }
+      prev = pt;
+    }
+    if (s < 0.24) {                             // 拍點的瞬間
+      const q = patternPoint(S.bpb, k, 0), f = s / 0.24;
+      ctx.strokeStyle = `rgba(200,52,31,${0.7 * (1 - f)})`; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(X(ZONE_R.x + q.x * u), Y(ZONE_R.y + q.y * u), hr * (1.1 + 2.4 * f), 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+
+  // 手：紅手套是右手，藍手套是左手
+  const hand = (pt, color) => {
+    ctx.fillStyle = color; ctx.strokeStyle = C.ink; ctx.lineWidth = ol;
+    ctx.beginPath(); ctx.arc(X(pt.x), Y(pt.y), hr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  };
+  hand(lh, C.azurite); hand(rh, C.cinnabar);
+
+  if (lh.label) {
+    const fs = Math.max(22, 0.085 * ppm);
+    ctx.font = `400 ${fs}px ${FONT.kai}`; ctx.fillStyle = C.azurite; ctx.textBaseline = 'middle';
+    ctx.textAlign = mx > 0 ? 'right' : 'left';
+    ctx.fillText(lh.label, X(lh.x) - mx * (hr + 12), Y(lh.y));
+  }
+
+  drawKtv(ctx, w, h, p, band);
+}
+
+// KTV 式歌詞：畫面下方中央一整句，唱到哪裡就從左往右變紅；長音會慢慢掃過去
+function drawKtv(ctx, w, h, p, band) {
+  const ln = S.lines.find(l => p >= l.from && p < l.hide);
+  if (!ln) return;
+  const n = ln.chars.length;
+  const fs = Math.min(band * 0.66, (w * 0.92) / (Math.max(n, 6) * 1.1));
+  ctx.font = `400 ${fs}px ${FONT.kai}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const cw = ctx.measureText('永').width, step = cw * 1.1;
+  const xL = (w - (step * (n - 1) + cw)) / 2, y = h - band * 0.5;
+  const each = fn => ln.chars.forEach((c, i) => fn(c.ch, xL + i * step));
+  ctx.lineJoin = 'round'; ctx.strokeStyle = C.paperLit; ctx.lineWidth = fs * 0.2;
+  each((ch, x) => ctx.strokeText(ch, x, y));               // 外框，讓字在人形上也看得清楚
+  ctx.fillStyle = C.ink; each((ch, x) => ctx.fillText(ch, x, y));
+  let edge = xL;
+  ln.chars.forEach((c, i) => { if (p >= c.p) edge = xL + i * step + cw * clamp((p - c.p) / (c.e - c.p), 0, 1); });
+  if (edge > xL) {
+    ctx.save(); ctx.beginPath(); ctx.rect(0, y - fs, edge, fs * 2); ctx.clip();
+    ctx.fillStyle = C.cinnabar; each((ch, x) => ctx.fillText(ch, x, y));
+    ctx.restore();
+  }
+}
+
+function drawLane(p) {
+  const { w, h, dpr } = fit(lane), ctx = lctx;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const ppb = clamp(w / 15, 48, 120), x0 = Math.round(w * 0.2);
+  const X = q => x0 + (q - p) * ppb;
+  const pMin = p - x0 / ppb - 1, pMax = p + (w - x0) / ppb + 1;
+  const yLab = 17, yLyr = 41, yBand = 60, hBand = 7, yNum = 95, yBar = 113;
+
+  // 現在（畫在最底層，歌詞蓋在上面）
+  ctx.strokeStyle = C.cinnabar; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(x0, 6); ctx.lineTo(x0, h - 6); ctx.stroke();
+  ctx.fillStyle = C.cinnabar; ctx.beginPath(); ctx.moveTo(x0 - 7, 3); ctx.lineTo(x0 + 7, 3); ctx.lineTo(x0, 13); ctx.closePath(); ctx.fill();
+
+  // 人聲長條：有聲音的地方，可以看出每個長音撐多久
+  ctx.fillStyle = C.ink;
+  for (const ph of S.phrases) {
+    if (ph.pb < pMin || ph.pa > pMax) continue;
+    const xa = X(ph.pa), xb = X(ph.pb);
+    ctx.beginPath(); ctx.roundRect(xa, yBand, Math.max(4, xb - xa), hBand, 3.5); ctx.fill();
+  }
+  // 拍線
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  for (let g = Math.max(0, Math.ceil(pMin)); g <= Math.min(S.beats.length - 1, Math.floor(pMax)); g++) {
+    if (g < S.gFirst - S.bpb || g > S.gLast + 1) continue;
+    const x = X(g), k = S.inBar(g), down = k === 0;
+    ctx.strokeStyle = down ? 'rgba(23,33,43,0.65)' : 'rgba(23,33,43,0.32)'; ctx.lineWidth = down ? 2 : 1;
+    ctx.beginPath(); ctx.moveTo(x, down ? yBand - 6 : yBand - 3); ctx.lineTo(x, yBand + hBand + (down ? 9 : 4)); ctx.stroke();
+    ctx.fillStyle = down ? C.ink : C.inkPale; ctx.font = `${down ? 700 : 500} ${down ? 19 : 16}px ${FONT.num}`;
+    ctx.fillText(String(k + 1), x, yNum);
+    if (down && S.barNo(g) >= 1) { ctx.fillStyle = C.inkPale; ctx.font = `400 13px ${FONT.kai}`; ctx.fillText(`第 ${S.barNo(g)} 小節`, x, yBar); }
+  }
+  // 歌詞：每個字放在它開口的那個拍子位置
+  const fs = clamp(ppb * 0.28, 20, 28);
+  ctx.textBaseline = 'middle'; ctx.font = `400 ${fs}px ${FONT.kai}`;
+  for (const ln of S.lines) {
+    const last = ln.chars[ln.chars.length - 1];
+    if (last.p < pMin - 1 || ln.p0 > pMax) continue;
+    const live = p >= ln.p0 - 0.03 && p < ln.hide;
+    let prevX = -1e9, on = -1;
+    if (live) ln.chars.forEach((c, i) => { if (c.p <= p + 0.03) on = i; });
+    ln.chars.forEach((c, i) => {
+      const x = Math.max(X(c.p), prevX + fs * 0.98); prevX = x;      // 太密的字往右讓一點，不要疊在一起
+      ctx.fillStyle = i === on ? C.cinnabar : c.p < p ? C.inkPale : C.ink;
+      ctx.fillText(c.ch, x, yLyr);
+    });
+  }
+  // 進歌點與收音
+  ctx.textBaseline = 'alphabetic';
+  const flag = (x, text, color, dashed) => {
+    ctx.strokeStyle = color; ctx.lineWidth = dashed ? 2.5 : 4; ctx.setLineDash(dashed ? [4, 4] : []);
+    ctx.beginPath(); ctx.moveTo(x, yBand - 8); ctx.lineTo(x, yBand + hBand + 11); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = color; ctx.font = `400 19px ${FONT.kai}`; ctx.fillText(text, x, yLab);
+    ctx.beginPath(); ctx.moveTo(x - 5, yLab + 4); ctx.lineTo(x + 5, yLab + 4); ctx.lineTo(x, yLab + 10); ctx.closePath(); ctx.fill();
+  };
+  for (const c of S.cues) if (c.drop >= pMin && c.drop <= pMax) flag(X(c.sing), '進歌', C.azurite, false);
+  for (const c of S.cuts) if (c.rel >= pMin && c.rel <= pMax) flag(X(c.rel), '收', C.cinnabar, true);
+}
+
+/* ───────── 音訊時鐘（平滑化，避免畫面抖動） ───────── */
+const clock = { perf: 0, media: 0 };
+function mediaNow() {
+  const now = performance.now(), actual = audio.currentTime;
+  if (audio.paused || audio.seeking) { clock.perf = now; clock.media = actual; return actual; }
+  const predicted = clock.media + (now - clock.perf) / 1000 * audio.playbackRate;
+  const err = actual - predicted;
+  clock.perf = now;
+  clock.media = Math.abs(err) > 0.08 ? actual : predicted + err * 0.06;
+  return clock.media;
+}
+
+/* ───────── 節拍聲 ───────── */
+let actx = null, nextClick = null;
+function scheduleClicks(t) {
+  if (!store.click || audio.paused) { nextClick = null; return; }
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  if (actx.state === 'suspended') actx.resume();
+  let outNow = actx.currentTime;
+  if (actx.getOutputTimestamp) {
+    const ts = actx.getOutputTimestamp();
+    if (ts.contextTime > 0) outNow = ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
+  }
+  const rate = audio.playbackRate;
+  if (nextClick == null) nextClick = Math.max(S.gFirst, Math.ceil(S.pos(t) - 1e-4));
+  while (nextClick <= S.gLast && S.beats[nextClick] <= t + 0.16 * rate) {
+    const g = nextClick++, when = Math.max(actx.currentTime, outNow + (S.beats[g] - t) / rate);
+    const o = actx.createOscillator(), v = actx.createGain(), down = S.inBar(g) === 0;
+    o.type = 'triangle'; o.frequency.value = down ? 1760 : 1100;
+    v.gain.setValueAtTime(0.0001, when); v.gain.exponentialRampToValueAtTime(down ? 0.55 : 0.32, when + 0.004);
+    v.gain.exponentialRampToValueAtTime(0.0001, when + 0.07);
+    o.connect(v).connect(actx.destination); o.start(when); o.stop(when + 0.09);
+  }
+}
+
+/* ───────── 每一格畫面 ───────── */
+let loop = null;      // { a, b, drop } 循環練習的範圍（秒）
+const el = { beatNum: $('beatNum'), barNum: $('barNum'), cue: $('cue'), where: $('cueWhere'), big: $('cueBig'), hint: $('cueHint'), time: $('time'), head: null, loopBox: null };
+let shown = {};
+function setText(node, key, value) { if (shown[key] !== value) { shown[key] = value; node.textContent = value; } }
+
+
+function frame() {
+  requestAnimationFrame(frame);
+  if (!S) return;
+  let t = mediaNow();
+  if (loop && !audio.paused && t >= loop.b) { audio.currentTime = loop.a; t = loop.a; clock.media = t; clock.perf = performance.now(); nextClick = null; }
+  scheduleClicks(t);
+  const tv = t + S.tune.offsetMs / 1000, p = S.pos(tv);
+  drawFigure(tv, p); drawLane(p);
+
+  const g = Math.floor(p), active = g >= S.gFirst && p <= S.gLast + 1 && ampAt(p) > 0.05;
+  setText(el.beatNum, 'beat', active ? String(S.inBar(g) + 1) : ' ');
+  const hit = active && p - g < 0.3;
+  if (shown.hit !== hit) { shown.hit = hit; el.beatNum.classList.toggle('hit', hit); }
+  setText(el.barNum, 'bar', active && S.barNo(g) >= 1 ? `第 ${S.barNo(g)} 小節` : ' ');
+  const cs = cueState(p);
+  if (shown.kind !== cs.kind) { shown.kind = cs.kind; el.cue.dataset.kind = cs.kind; }
+  setText(el.where, 'where', cs.where); setText(el.big, 'big', cs.big); setText(el.hint, 'hint', cs.hint);
+  setText(el.time, 'time', `${fmt(t)} / ${fmt(S.song.duration)}`);
+  if (el.head) el.head.style.left = (clamp(t / S.song.duration, 0, 1) * 100) + '%';
+}
+
+/* ───────── 介面 ───────── */
+function problem(msg) { const b = $('problem'); b.textContent = msg || ''; b.classList.toggle('show', !!msg); }
+
+function renderOverview() {
+  const box = $('overview'), D = S.song.duration, pct = t => (clamp(t / D, 0, 1) * 100) + '%';
+  box.textContent = '';
+  const add = (cls, style, text) => { const d = document.createElement('div'); d.className = cls; Object.assign(d.style, style); if (text) d.textContent = text; box.appendChild(d); return d; };
+  add('track', {});
+  el.loopBox = add('loop', {});
+  S.phrases.forEach(ph => add('sung', { left: pct(ph.a), width: ((ph.b - ph.a) / D * 100) + '%' }));
+  const edges = [0].concat(...S.sections.map(s => [s.a, s.b]), [D]);
+  for (let i = 0; i < edges.length; i += 2) {
+    const a = edges[i], b = edges[i + 1];
+    if ((b - a) / D < 0.035) continue;
+    add('gap', { left: pct((a + b) / 2) }, i === 0 ? '前奏' : i === edges.length - 2 ? '尾奏' : '間奏');
+  }
+  S.cues.filter(c => c.major).forEach(c => add('entry', { left: pct(S.timeAt(c.sing)) }));
+  el.head = add('head', { left: '0%' });
+  paintLoop();
+}
+function paintLoop() {
+  if (!el.loopBox) return;
+  const D = S.song.duration;
+  el.loopBox.style.display = loop ? 'block' : 'none';
+  if (loop) { el.loopBox.style.left = (loop.a / D * 100) + '%'; el.loopBox.style.width = ((loop.b - loop.a) / D * 100) + '%'; }
+  document.querySelectorAll('#chips .chip').forEach(b => b.setAttribute('aria-pressed', String(!!loop && Number(b.dataset.drop) === loop.drop)));
+}
+function renderChips() {
+  const box = $('chips'); box.textContent = '';
+  const majors = S.cues.filter(c => c.major);
+  if (!majors.length) { const s = document.createElement('span'); s.className = 'label'; s.textContent = '（沒有偵測到，可在「校正」裡自己加）'; box.appendChild(s); return; }
+  majors.forEach(c => {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.dataset.drop = c.drop; b.setAttribute('aria-pressed', 'false');
+    b.textContent = `${c.no}　${fmt(S.timeAt(c.sing))}`;
+    b.title = `反覆練習第 ${c.no} 次進歌（前後各兩小節）`;
+    b.onclick = () => {
+      if (loop && loop.drop === c.drop) { loop = null; paintLoop(); return; }
+      loop = { a: Math.max(0, S.timeAt(c.drop - 2 * S.bpb)), b: Math.min(S.song.duration, S.timeAt(c.drop + 2 * S.bpb)), drop: c.drop };
+      seek(loop.a); paintLoop(); audio.play();
+    };
+    box.appendChild(b);
+  });
+}
+function renderTune() {
+  const tn = S.tune;
+  $('offset').value = tn.offsetMs;
+  $('offsetOut').textContent = tn.offsetMs === 0 ? '不調整' : tn.offsetMs > 0 ? `畫面提早 ${tn.offsetMs} 毫秒` : `畫面延後 ${-tn.offsetMs} 毫秒`;
+  const sh = mod(tn.shift, S.bpb);
+  $('shiftOut').textContent = sh === 0 ? '目前：自動判定' : `目前：比自動判定晚 ${sh} 拍`;
+  const near = nearCue();
+  $('cueDel').disabled = !near; $('cueAdd').disabled = !!near;
+}
+const nowG = () => Math.round(S.pos(audio.currentTime));
+const nearCue = () => S.cues.find(c => Math.abs(c.drop - S.pos(audio.currentTime)) <= 1);
+
+function rebuild() {
+  S = buildModel(S.song); loop = null; nextClick = null; shown = {};
+  $('tempo').textContent = `每分鐘 ${Math.round(S.bpm)} 拍，${S.bpb} 拍子`;
+  renderOverview(); renderChips(); renderTune();
+}
+function seek(t) { audio.currentTime = clamp(t, 0, S.song.duration - 0.05); clock.media = audio.currentTime; clock.perf = performance.now(); nextClick = null; }
+
+function selectSong(id) {
+  const song = SONGS.find(s => s.id === id) || SONGS[0];
+  audio.pause();
+  S = { song }; rebuild();
+  store.last = song.id; save();
+  problem('');
+  audio.src = encodeURI(song.audio); audio.load();
+  audio.playbackRate = store.rate;
+  document.querySelectorAll('#songs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.id === song.id)));
+  document.title = `指揮練習：${song.title}`;
+}
+function setView(v) {
+  store.view = v; save();
+  $('viewMirror').setAttribute('aria-pressed', String(v === 'mirror'));
+  $('viewChoir').setAttribute('aria-pressed', String(v === 'choir'));
+  const note = $('mirrorNote');
+  note.querySelector('.long').textContent = v === 'mirror' ? '像照鏡子：畫面右邊的紅色手是你的右手（打拍子），藍色手是左手（進歌和收音）' : '這是團員從台下看到的你，左右和你自己做的相反：紅色是右手，藍色是左手';
+  note.querySelector('.short').textContent = v === 'mirror' ? '像照鏡子：紅色是你的右手，藍色是左手' : '團員看到的樣子：紅色是右手，藍色是左手';
+}
+
+// 播放時不讓手機螢幕自動關閉（瀏覽器不支援，或不是 https 時就照常播放）
+let wake = null;
+async function keepAwake() {
+  const want = !audio.paused && document.visibilityState === 'visible';
+  try {
+    if (want && !wake && navigator.wakeLock) {
+      const w = await navigator.wakeLock.request('screen');
+      w.addEventListener('release', () => { if (wake === w) wake = null; });
+      wake = w;
+      if (audio.paused) keepAwake();
+    } else if (!want && wake) { const w = wake; wake = null; await w.release(); }
+  } catch (e) { /* 被拒絕也不影響練習 */ }
+}
+function setRate(r) {
+  store.rate = r; save(); audio.defaultPlaybackRate = r; audio.playbackRate = r; nextClick = null;
+  document.querySelectorAll('#rates button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.rate) === r)));
+}
+function setClick(on) { store.click = on; save(); nextClick = null; $('click').setAttribute('aria-pressed', String(on)); }
+function toggle() { if (audio.paused) audio.play(); else audio.pause(); }
+function jumpCue(dir) {
+  const p = S.pos(audio.currentTime), list = S.cues.filter(c => c.major);
+  const c = dir > 0 ? list.find(c => c.drop - 2 * S.bpb > p + 0.5) : [...list].reverse().find(c => c.drop - 2 * S.bpb < p - 2);
+  if (c) { loop = null; paintLoop(); seek(S.timeAt(c.drop - 2 * S.bpb)); }
+}
+
+function init() {
+  if (!SONGS.length) { problem('找不到歌曲資料檔 conducting-data.js，請確認它和這個網頁放在同一個資料夾。'); return; }
+  const tabs = $('songs');
+  SONGS.forEach(s => {
+    const b = document.createElement('button');
+    b.textContent = s.title; b.dataset.id = s.id; b.setAttribute('role', 'tab');
+    b.onclick = () => selectSong(s.id); tabs.appendChild(b);
+  });
+  const rates = $('rates');
+  RATES.forEach(r => {
+    const b = document.createElement('button');
+    b.textContent = r === 1 ? '原速' : `${Math.round(r * 100)}%`; b.dataset.rate = r;
+    b.onclick = () => setRate(r); rates.appendChild(b);
+  });
+
+  $('play').onclick = toggle;
+  $('viewMirror').onclick = () => setView('mirror');
+  $('viewChoir').onclick = () => setView('choir');
+  $('click').onclick = () => setClick(!store.click);
+  $('overview').onclick = e => { const r = $('overview').getBoundingClientRect(); loop = null; paintLoop(); seek((e.clientX - r.left) / r.width * S.song.duration); };
+  $('offset').oninput = e => { S.tune.offsetMs = Number(e.target.value); save(); renderTune(); };
+  $('shiftBack').onclick = () => { S.tune.shift = mod(S.tune.shift - 1, S.bpb); save(); rebuild(); };
+  $('shiftFwd').onclick = () => { S.tune.shift = mod(S.tune.shift + 1, S.bpb); save(); rebuild(); };
+  $('cueAdd').onclick = () => {
+    const r = nowG() - S.gFirst, tn = S.tune;
+    tn.removed = tn.removed.filter(x => x !== r); if (!tn.added.includes(r)) tn.added.push(r);
+    save(); rebuild();
+  };
+  $('cueDel').onclick = () => {
+    const c = nearCue(); if (!c) return;
+    const r = c.drop - S.gFirst, tn = S.tune;
+    if (c.auto) tn.removed.push(r); else tn.added = tn.added.filter(x => x !== r);
+    save(); rebuild();
+  };
+  $('resetTune').onclick = () => { store.songs[S.song.id] = undefined; save(); rebuild(); };
+  $('tune').addEventListener('toggle', renderTune);
+  $('tuneClose').onclick = () => { $('tune').open = false; };
+
+  audio.addEventListener('play', () => { $('play').textContent = '暫停'; nextClick = null; keepAwake(); });
+  audio.addEventListener('pause', () => { $('play').textContent = '播放'; renderTune(); keepAwake(); });
+  document.addEventListener('visibilitychange', keepAwake);
+  audio.addEventListener('seeked', () => { nextClick = null; renderTune(); });
+  audio.addEventListener('loadedmetadata', () => { document.documentElement.dataset.audio = 'ready'; });
+  audio.addEventListener('error', () => problem(`找不到音檔「${S.song.audio}」。請把它和這個網頁放在同一個資料夾，檔名不要改。`));
+
+  // 用滑鼠按過按鈕後把焦點還給頁面，空白鍵才會一直是「播放／暫停」
+  document.addEventListener('click', e => { const b = e.target.closest('button, summary'); if (b && e.detail > 0) b.blur(); });
+  document.addEventListener('keydown', e => {
+    const at = e.target instanceof Element ? e.target : document.body;
+    if (at.matches('input')) return;
+    if (e.code === 'Space') { if (at.closest('button, summary')) return; e.preventDefault(); toggle(); }
+    else if (e.code === 'ArrowLeft') { e.preventDefault(); seek(S.timeAt(S.pos(audio.currentTime) - S.bpb)); }
+    else if (e.code === 'ArrowRight') { e.preventDefault(); seek(S.timeAt(S.pos(audio.currentTime) + S.bpb)); }
+    else if (e.code === 'ArrowUp') { e.preventDefault(); jumpCue(-1); }
+    else if (e.code === 'ArrowDown') { e.preventDefault(); jumpCue(1); }
+    else if (e.code === 'KeyM') setClick(!store.click);
+  });
+
+  setView(store.view); setRate(store.rate); setClick(store.click);
+  selectSong(store.last);
+  requestAnimationFrame(frame);
+}
+init();
+})();
+</script>
+</body>
+</html>
