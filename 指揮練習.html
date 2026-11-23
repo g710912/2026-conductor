@@ -192,6 +192,7 @@
     .time { order: 2; min-width: 0; font-size: 15px; }
     .row .spacer { order: 5; }
     #click { order: 6; }
+    #inst { order: 10; margin-left: auto; }
     details.tune { order: 7; }
     .row::after { content: ""; order: 8; flex-basis: 100%; height: 0; margin-top: -8px; }   /* 強制換行 */
     .label.for-rates { order: 9; margin-right: -2px; }
@@ -222,6 +223,7 @@
     .panel { top: 8px; right: auto; width: 300px; max-height: none; }   /* 靠左直放，不擋打拍子的手 */
     .label.for-rates { order: 3; }
     #rates { order: 4; }
+    #inst { order: 5; margin-left: 0; }
     .label.for-chips { flex-basis: auto; margin: 0 -2px 0 0; }
     .chips { flex: 1 1 0; }
   }
@@ -267,6 +269,7 @@
       <span class="label for-chips">練進歌點</span>
       <div class="chips" id="chips"></div>
       <span class="spacer"></span>
+      <button class="toggle" id="inst" aria-pressed="false" title="只聽伴奏，沒有人唱（表演時的音樂）">純伴奏</button>
       <button class="toggle" id="click" aria-pressed="false">節拍聲</button>
       <details class="tune" id="tune">
         <summary>校正</summary>
@@ -297,7 +300,7 @@
           </div>
           <div class="block">
             <div class="btns"><button id="resetTune">全部還原成自動判定</button></div>
-            <p class="keys" style="margin-top:10px">空白鍵 播放／暫停　← → 前後一小節　↑ ↓ 上一個／下一個進歌點　M 節拍聲</p>
+            <p class="keys" style="margin-top:10px">空白鍵 播放／暫停　← → 前後一小節　↑ ↓ 上一個／下一個進歌點　B 純伴奏　M 節拍聲</p>
           </div>
         </div>
       </details>
@@ -337,6 +340,7 @@ const store = (() => {
   s.view = s.view === 'choir' ? 'choir' : 'mirror';
   s.rate = RATES.includes(s.rate) ? s.rate : 1;
   s.click = !!s.click;
+  s.inst = !!s.inst;
   s.songs = s.songs || {};
   return s;
 })();
@@ -419,6 +423,7 @@ function buildModel(song) {
     return { text, chars, p0: chars[0].p };
   });
   const flat = lines.flatMap(ln => ln.chars);
+  flat.forEach(c => { const g = Math.round(c.p); c.one = Math.abs(c.p - g) < 0.13 && inBar(g) === 0; });   // 這個字在第 1 拍開口
   flat.forEach((c, i) => {          // 一個字唱到下一個字開口，或唱到聲音停下來為止
     const next = flat[i + 1] ? flat[i + 1].p : Infinity, ve = voiceEnd(c.p + 0.05);
     c.e = Math.max(c.p + 0.2, Math.min(next, ve != null ? ve : c.p + 1, c.p + 6));
@@ -443,17 +448,21 @@ const DOWN = { x: 0.25, y: -0.46 };         // 手放下
 const AMP_IDLE = 0.68;
 
 // 各拍的拍點位置（拍型大小為 1 時）與往下一拍彈起的高度
+// 圓滑（legato）打法：手在拍點不停也不折返，帶著橫向速度掃過最低點，
+// 反彈時順勢繞一個弧再去下一拍，四拍連起來像一個橫躺的 8。
+//   pts  拍點位置　lift 反彈高度　vx 經過拍點時的橫向速度（負的是往指揮自己的左邊）
 const PATTERNS = {
-  2: { pts: [[0, 0], [0.22, 0.24]], lift: [0.30, 0.86] },
-  3: { pts: [[0, 0], [0.50, 0.06], [0.18, 0.28]], lift: [0.30, 0.24, 0.86] },
-  4: { pts: [[0, 0], [-0.42, 0.06], [0.50, 0.06], [0.20, 0.28]], lift: [0.30, 0.28, 0.24, 0.86] },
+  2: { pts: [[0, 0], [0.22, 0.24]], lift: [0.30, 0.86], vx: [0.6, -0.5] },
+  3: { pts: [[0, 0], [0.50, 0.06], [0.18, 0.28]], lift: [0.30, 0.24, 0.86], vx: [0.55, 1.0, -0.5] },
+  4: { pts: [[0, 0], [-0.42, 0.06], [0.50, 0.06], [0.20, 0.28]], lift: [0.30, 0.28, 0.24, 0.86], vx: [-0.5, -1.0, 1.0, -0.5] },
 };
+const ROUND = 0.36;                                     // 拍點底部的圓度：0 是尖的彈跳，越大越圓
+const arch = s => { const q = 4 * s * (1 - s); return (Math.hypot(q, ROUND) - ROUND) / (Math.hypot(1, ROUND) - ROUND); };
 function patternPoint(bpb, k, s) {
-  const P = PATTERNS[bpb] || PATTERNS[4];
-  const n = P.pts.length, a = P.pts[k % n], last = (k % n) === n - 1, b = last ? P.pts[0] : P.pts[k + 1];
-  const bounce = P.lift[k % n] * 4 * s * (1 - s);     // 拋物線：離開與抵達拍點時最快，像球彈跳
-  const x = last ? lerp(a[0], 0, smooth(s / 0.6)) : lerp(a[0], b[0], 0.5 * s + 0.5 * smooth(s));
-  return { x, y: lerp(a[1], b[1], s) + bounce };
+  const P = PATTERNS[bpb] || PATTERNS[4], n = P.pts.length, i = k % n, j = (i + 1) % n;
+  const a = P.pts[i], b = P.pts[j], s2 = s * s, s3 = s2 * s;
+  const x = (2 * s3 - 3 * s2 + 1) * a[0] + (s3 - 2 * s2 + s) * P.vx[i] + (3 * s2 - 2 * s3) * b[0] + (s3 - s2) * P.vx[j];
+  return { x, y: lerp(a[1], b[1], smooth(s)) + P.lift[i] * arch(s) };
 }
 
 function ampAt(p) {
@@ -737,7 +746,8 @@ function drawKtv(ctx, w, h, p, band) {
   const fs = Math.min(band * 0.66, (w * 0.92) / (Math.max(n, 6) * 1.1));
   ctx.font = `400 ${fs}px ${FONT.kai}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   const cw = ctx.measureText('永').width, step = cw * 1.1;
-  const xL = (w - (step * (n - 1) + cw)) / 2, y = h - band * 0.5;
+  const r1 = clamp(fs * 0.16, 7, 13);                     // 「第 1 拍」記號的大小
+  const xL = (w - (step * (n - 1) + cw)) / 2, y = h - band * 0.5 - r1 * 0.9;
   const each = fn => ln.chars.forEach((c, i) => fn(c.ch, xL + i * step));
   ctx.lineJoin = 'round'; ctx.strokeStyle = C.paperLit; ctx.lineWidth = fs * 0.2;
   each((ch, x) => ctx.strokeText(ch, x, y));               // 外框，讓字在人形上也看得清楚
@@ -749,6 +759,16 @@ function drawKtv(ctx, w, h, p, band) {
     ctx.fillStyle = C.cinnabar; each((ch, x) => ctx.fillText(ch, x, y));
     ctx.restore();
   }
+  // 在第 1 拍開口的字，下面標一個 ①：落拍時等到這種字，手直直往下重新開始
+  ctx.textAlign = 'center';
+  ln.chars.forEach((c, i) => {
+    if (!c.one) return;
+    const x = xL + i * step + cw / 2, yy = y + fs * 0.5 + r1 + 2, done = p >= c.p;
+    ctx.fillStyle = done ? C.cinnabar : C.ink; ctx.strokeStyle = C.paperLit; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, yy, r1, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = C.paperLit; ctx.font = `700 ${r1 * 1.45}px ${FONT.num}`;
+    ctx.fillText('1', x, yy + r1 * 0.08);
+  });
 }
 
 function drawLane(p) {
@@ -812,7 +832,9 @@ function drawLane(p) {
 
 /* ───────── 音訊時鐘（平滑化，避免畫面抖動） ───────── */
 const clock = { perf: 0, media: 0 };
+let hold = null;        // 換音檔的瞬間先停在原來的時間，畫面才不會跳回開頭
 function mediaNow() {
+  if (hold != null) { clock.perf = performance.now(); clock.media = hold; return hold; }
   const now = performance.now(), actual = audio.currentTime;
   if (audio.paused || audio.seeking) { clock.perf = now; clock.media = actual; return actual; }
   const predicted = clock.media + (now - clock.perf) / 1000 * audio.playbackRate;
@@ -870,6 +892,8 @@ function frame() {
   if (shown.kind !== cs.kind) { shown.kind = cs.kind; el.cue.dataset.kind = cs.kind; }
   setText(el.where, 'where', cs.where); setText(el.big, 'big', cs.big); setText(el.hint, 'hint', cs.hint);
   setText(el.time, 'time', `${fmt(t)} / ${fmt(S.song.duration)}`);
+  const playing = !audio.paused;                // 換歌、換音檔時瀏覽器不會發出 pause 事件，所以直接看實際狀態
+  if (shown.playing !== playing) { shown.playing = playing; $('play').textContent = playing ? '暫停' : '播放'; keepAwake(); }
   if (el.head) el.head.style.left = (clamp(t / S.song.duration, 0, 1) * 100) + '%';
 }
 
@@ -942,8 +966,8 @@ function selectSong(id) {
   S = { song }; rebuild();
   store.last = song.id; save();
   problem('');
-  audio.src = encodeURI(song.audio); audio.load();
-  audio.playbackRate = store.rate;
+  $('inst').hidden = !song.audioInst;
+  loadAudio(srcOf(song), 0, false);
   document.querySelectorAll('#songs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.id === song.id)));
   document.title = `指揮練習：${song.title}`;
 }
@@ -973,6 +997,30 @@ function setRate(r) {
   store.rate = r; save(); audio.defaultPlaybackRate = r; audio.playbackRate = r; nextClick = null;
   document.querySelectorAll('#rates button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.rate) === r)));
 }
+// 有人聲的原曲和純伴奏是同一份錄音、時間完全相同，所以換檔後接著原來的位置繼續
+const srcOf = song => (store.inst && song.audioInst) || song.audio;
+let nowSrc = '';
+function loadAudio(name, t, playing) {
+  nowSrc = name; problem('');
+  audio.src = encodeURI(name); audio.load();
+  audio.playbackRate = store.rate;
+  if (t > 0) {
+    hold = t;
+    const release = () => { hold = null; clock.media = audio.currentTime; clock.perf = performance.now(); nextClick = null; };
+    audio.addEventListener('loadedmetadata', () => {
+      audio.addEventListener('seeked', release, { once: true });
+      audio.currentTime = t;
+    }, { once: true });
+    audio.addEventListener('error', () => { hold = null; }, { once: true });
+  } else hold = null;
+  if (playing) { const pr = audio.play(); if (pr) pr.catch(() => {}); }
+}
+function setInst(on) {
+  store.inst = !!on; save();
+  $('inst').setAttribute('aria-pressed', String(store.inst));
+  if (!S || srcOf(S.song) === nowSrc) return;
+  loadAudio(srcOf(S.song), hold != null ? hold : audio.currentTime, !audio.paused);
+}
 function setClick(on) { store.click = on; save(); nextClick = null; $('click').setAttribute('aria-pressed', String(on)); }
 function toggle() { if (audio.paused) audio.play(); else audio.pause(); }
 function jumpCue(dir) {
@@ -1000,6 +1048,7 @@ function init() {
   $('viewMirror').onclick = () => setView('mirror');
   $('viewChoir').onclick = () => setView('choir');
   $('click').onclick = () => setClick(!store.click);
+  $('inst').onclick = () => setInst(!store.inst);
   $('overview').onclick = e => { const r = $('overview').getBoundingClientRect(); loop = null; paintLoop(); seek((e.clientX - r.left) / r.width * S.song.duration); };
   $('offset').oninput = e => { S.tune.offsetMs = Number(e.target.value); save(); renderTune(); };
   $('shiftBack').onclick = () => { S.tune.shift = mod(S.tune.shift - 1, S.bpb); save(); rebuild(); };
@@ -1024,7 +1073,7 @@ function init() {
   document.addEventListener('visibilitychange', keepAwake);
   audio.addEventListener('seeked', () => { nextClick = null; renderTune(); });
   audio.addEventListener('loadedmetadata', () => { document.documentElement.dataset.audio = 'ready'; });
-  audio.addEventListener('error', () => problem(`找不到音檔「${S.song.audio}」。請把它和這個網頁放在同一個資料夾，檔名不要改。`));
+  audio.addEventListener('error', () => problem(`找不到音檔「${nowSrc}」。請把它和這個網頁放在同一個資料夾，檔名不要改。`));
 
   // 用滑鼠按過按鈕後把焦點還給頁面，空白鍵才會一直是「播放／暫停」
   document.addEventListener('click', e => { const b = e.target.closest('button, summary'); if (b && e.detail > 0) b.blur(); });
@@ -1037,9 +1086,11 @@ function init() {
     else if (e.code === 'ArrowUp') { e.preventDefault(); jumpCue(-1); }
     else if (e.code === 'ArrowDown') { e.preventDefault(); jumpCue(1); }
     else if (e.code === 'KeyM') setClick(!store.click);
+    else if (e.code === 'KeyB' && S.song.audioInst) setInst(!store.inst);
   });
 
   setView(store.view); setRate(store.rate); setClick(store.click);
+  $('inst').setAttribute('aria-pressed', String(store.inst));
   selectSong(store.last);
   requestAnimationFrame(frame);
 }
